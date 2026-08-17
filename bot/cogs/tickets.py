@@ -1,9 +1,9 @@
 """Reacts to Ticket Tool creating a ticket channel, gates it behind the intake
 modal, and reopens it once the opener submits.
 
-Ticket Tool's own button click never reaches this bot -- Discord routes
-component interactions only to the application that owns the component -- so the
-flow is driven by our own button, posted into the channel after it appears.
+Ticket Tool's own button click never reaches this bot -- Discord routes component
+interactions only to the application that owns the component -- so the flow is
+driven by our own button, posted into the channel after it appears.
 """
 
 from __future__ import annotations
@@ -16,8 +16,7 @@ from discord.ext import commands
 from ..services.intake import IntakeService
 from ..storage.base import Repository
 from ..storage.models import GuildConfig, IntakeSubmission
-from ..ui.modals import IntakeModal
-from ..ui.views import StartIntakeView, completed_view
+from ..ui import IntakeModal, StartIntakeView, completed_view
 
 log = logging.getLogger(__name__)
 
@@ -32,12 +31,8 @@ class TicketsCog(commands.Cog):
         self.repo = repo
         self.service = service
 
-    # --- ticket detection ----------------------------------------------------
-
     @commands.Cog.listener()
-    async def on_guild_channel_create(
-        self, channel: discord.abc.GuildChannel
-    ) -> None:
+    async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
         if not isinstance(channel, discord.TextChannel):
             return
 
@@ -54,18 +49,14 @@ class TicketsCog(commands.Cog):
         try:
             intake = await self.service.begin(channel, member)
         except discord.Forbidden:
-            log.warning(
-                "Missing Manage Permissions in #%s (%s); cannot gate intake",
-                channel.name,
-                channel.id,
-            )
+            log.warning("Missing Manage Permissions in #%s; cannot gate", channel.name)
             return
 
         try:
             message = await channel.send(
                 content=member.mention,
                 embed=self._prompt_embed(config),
-                view=StartIntakeView(self),
+                view=StartIntakeView(self.on_intake_clicked),
             )
         except discord.HTTPException:
             log.exception("Could not post intake prompt in #%s", channel.name)
@@ -76,20 +67,15 @@ class TicketsCog(commands.Cog):
         await self.repo.save_pending_intake(intake)
 
     @commands.Cog.listener()
-    async def on_guild_channel_delete(
-        self, channel: discord.abc.GuildChannel
-    ) -> None:
-        # Ticket deleted before submission; drop the row, nothing to restore.
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
         await self.service.forget(channel.id)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
         """Backstop for the gap between Ticket Tool creating the channel and us
-        locking it -- a fast typer can land a message in that window."""
+        locking it, and for openers whose roles bypass channel overwrites."""
         if message.guild is None or message.author.bot:
             return
-        # Cheap in-memory check first; this listener sees every message the bot
-        # can read, and storage should only be touched for gated channels.
         if not self.service.is_gated(message.channel.id):
             return
 
@@ -108,10 +94,12 @@ class TicketsCog(commands.Cog):
             delete_after=NUDGE_SECONDS,
         )
 
-    # --- button + modal ------------------------------------------------------
-
     async def on_intake_clicked(self, interaction: discord.Interaction) -> None:
-        intake = await self.repo.get_pending_intake(interaction.channel_id or 0)
+        """Validate the clicker owns this ticket, then show them the questions."""
+        if interaction.channel_id is None or interaction.guild_id is None:
+            return
+
+        intake = await self.repo.get_pending_intake(interaction.channel_id)
         if intake is None:
             await interaction.response.send_message(
                 "This intake is no longer active.", ephemeral=True
@@ -125,8 +113,8 @@ class TicketsCog(commands.Cog):
             )
             return
 
-        config = await self.repo.get_guild_config(interaction.guild_id or 0)
-        if config is None or not config.questions_for_page(intake.page):
+        config = await self.repo.get_guild_config(interaction.guild_id)
+        if config is None or not config.questions:
             await interaction.response.send_message(
                 "This server has no intake questions configured. "
                 "Ask an admin to run `/intake add-question`.",
@@ -134,18 +122,13 @@ class TicketsCog(commands.Cog):
             )
             return
 
-        await interaction.response.send_modal(
-            IntakeModal(config, intake.page, self._handle_submit)
-        )
+        await interaction.response.send_modal(IntakeModal(config, self._on_submitted))
 
-    async def _handle_submit(
-        self,
-        interaction: discord.Interaction,
-        answers: dict[str, str],
-        page: int,
+    async def _on_submitted(
+        self, interaction: discord.Interaction, answers: dict[str, str]
     ) -> None:
-        # set_permissions can be rate limited; defer so we keep well inside
-        # Discord's 3 second response window.
+        # set_permissions can be rate limited; defer to stay inside Discord's
+        # three second response window.
         await interaction.response.defer(ephemeral=True)
 
         channel = interaction.channel
@@ -179,12 +162,8 @@ class TicketsCog(commands.Cog):
             "Thanks -- you can now send messages in this ticket.", ephemeral=True
         )
 
-        # TODO: hand submission.rendered_prompt to the agent. Out of scope here.
-        log.info(
-            "Rendered prompt for #%s:\n%s", channel.name, submission.rendered_prompt
-        )
-
-    # --- embeds --------------------------------------------------------------
+        # TODO: hand submission.rendered_prompt to the agent.
+        log.info("Rendered prompt for #%s:\n%s", channel.name, submission.rendered_prompt)
 
     @staticmethod
     def _prompt_embed(config: GuildConfig) -> discord.Embed:
@@ -196,9 +175,7 @@ class TicketsCog(commands.Cog):
 
     @staticmethod
     def _summary_embed(
-        config: GuildConfig,
-        submission: IntakeSubmission,
-        member: discord.Member,
+        config: GuildConfig, submission: IntakeSubmission, member: discord.Member
     ) -> discord.Embed:
         embed = discord.Embed(
             title="Ticket details",
@@ -206,8 +183,8 @@ class TicketsCog(commands.Cog):
             timestamp=submission.submitted_at,
         )
         embed.set_author(name=str(member), icon_url=member.display_avatar.url)
-        for question in sorted(config.questions, key=lambda q: (q.page, q.position)):
-            value = (submission.answers.get(question.key) or "").strip()
+        for question in config.questions:
+            value = submission.answers.get(question.key, "").strip()
             embed.add_field(
                 name=question.label[:256],
                 value=(value or "_(skipped)_")[:1024],

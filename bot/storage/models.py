@@ -1,25 +1,24 @@
 """Plain data models shared by the storage, service and UI layers.
 
-Deliberately free of any discord.py types so the same objects can be served
-by a future web dashboard API.
+Deliberately free of discord.py types so the same objects can be served by a
+future web dashboard API.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 
-# Discord's hard limits on modal components. Enforced at config time so an
-# owner finds out when they add the question, not when a user clicks the button.
-MAX_QUESTIONS_PER_PAGE = 5
+# Discord's hard limits. Enforced when a question is added so an owner finds out
+# then, rather than when a user clicks the button and the modal fails to build.
+MAX_QUESTIONS = 5
 MAX_LABEL_LEN = 45
 MAX_PLACEHOLDER_LEN = 100
-MAX_VALUE_LEN = 4000
 MAX_TITLE_LEN = 45
-MAX_CHOICE_OPTIONS = 25
-"""Discord's cap on options in a single select menu."""
-MAX_OPTION_LABEL_LEN = 100
+MAX_TEMPLATE_LEN = 4000
+MAX_CHOICES = 25
+MAX_CHOICE_LEN = 100
 
 
 class QuestionStyle(str, Enum):
@@ -31,7 +30,7 @@ class QuestionStyle(str, Enum):
 
 @dataclass(slots=True)
 class Question:
-    """One text input inside the intake modal."""
+    """One field in the intake modal."""
 
     key: str
     """Identifier used in the prompt template as ``{key}``."""
@@ -40,68 +39,52 @@ class Question:
     style: QuestionStyle = QuestionStyle.SHORT
     placeholder: str | None = None
     required: bool = True
-    min_length: int | None = None
-    max_length: int | None = None
-    position: int = 0
-    page: int = 0
-    """Modal number this question appears on. Always 0 today; the chaining
-    work lands by allowing page > 0 without touching anything else."""
-
     choices: list[str] = field(default_factory=list)
-    """Dropdown options. Only meaningful when style is CHOICE."""
+    """Dropdown options, ordered. Only meaningful when style is CHOICE."""
 
     @property
     def is_choice(self) -> bool:
         return self.style is QuestionStyle.CHOICE
 
     def validate(self) -> list[str]:
+        """Every reason this question would be rejected; empty when it is valid."""
         errors: list[str] = []
+
         if not self.key.isidentifier():
             errors.append(
-                f"Question key {self.key!r} must be letters, digits and "
-                "underscores only, and cannot start with a digit."
+                f"Key {self.key!r} must be letters, digits and underscores only, "
+                "and cannot start with a digit."
             )
         if not self.label.strip():
-            errors.append("Question label cannot be empty.")
-        if len(self.label) > MAX_LABEL_LEN:
+            errors.append("Label cannot be empty.")
+        elif len(self.label) > MAX_LABEL_LEN:
             errors.append(f"Label must be {MAX_LABEL_LEN} characters or fewer.")
         if self.placeholder and len(self.placeholder) > MAX_PLACEHOLDER_LEN:
             errors.append(
                 f"Placeholder must be {MAX_PLACEHOLDER_LEN} characters or fewer."
             )
-        if self.max_length is not None and not (1 <= self.max_length <= MAX_VALUE_LEN):
-            errors.append(f"Max length must be between 1 and {MAX_VALUE_LEN}.")
-        if (
-            self.min_length is not None
-            and self.max_length is not None
-            and self.min_length > self.max_length
-        ):
-            errors.append("Min length cannot exceed max length.")
 
-        if self.is_choice:
-            if len(self.choices) < 2:
-                errors.append("A choice question needs at least two options.")
-            if len(self.choices) > MAX_CHOICE_OPTIONS:
-                errors.append(
-                    f"Discord allows at most {MAX_CHOICE_OPTIONS} dropdown options."
-                )
-            if len(set(self.choices)) != len(self.choices):
-                errors.append("Dropdown options must be unique.")
-            for option in self.choices:
-                if len(option) > MAX_OPTION_LABEL_LEN:
-                    errors.append(
-                        f"Option {option!r} exceeds {MAX_OPTION_LABEL_LEN} characters."
-                    )
-        elif self.choices:
-            errors.append("Only choice questions can have dropdown options.")
+        if not self.is_choice:
+            if self.choices:
+                errors.append("Only choice questions can have dropdown options.")
+            return errors
+
+        if len(self.choices) < 2:
+            errors.append("A choice question needs at least two options.")
+        if len(self.choices) > MAX_CHOICES:
+            errors.append(f"Discord allows at most {MAX_CHOICES} dropdown options.")
+        if len(set(self.choices)) != len(self.choices):
+            errors.append("Dropdown options must be unique.")
+        if any(len(choice) > MAX_CHOICE_LEN for choice in self.choices):
+            errors.append(f"Each option must be {MAX_CHOICE_LEN} characters or fewer.")
         return errors
 
 
 def parse_choices(raw: str) -> list[str]:
     """Split an admin's comma-separated option list.
 
-    Commas are the separator, so an option containing one is not expressible;
-    that is an accepted tradeoff for keeping this a single slash-command field.
+    Commas are the separator, so an option containing one is not expressible.
+    That is the accepted cost of keeping this a single slash-command field.
     """
     return [part.strip() for part in raw.split(",") if part.strip()]
 
@@ -116,7 +99,10 @@ DEFAULT_PROMPT_TEMPLATE = "A user opened a support ticket.\n\n{answers}"
 
 @dataclass(slots=True)
 class GuildConfig:
-    """Everything one server has customised about its intake flow."""
+    """One server's intake setup.
+
+    ``questions`` is ordered -- its order is the order fields appear in the modal.
+    """
 
     guild_id: int
     enabled: bool = True
@@ -131,43 +117,20 @@ class GuildConfig:
         """Whether this guild has enough set up for the flow to run at all."""
         return self.enabled and bool(self.ticket_category_ids) and bool(self.questions)
 
-    def questions_for_page(self, page: int) -> list[Question]:
-        return sorted(
-            (q for q in self.questions if q.page == page),
-            key=lambda q: q.position,
-        )
-
-    def question_by_key(self, key: str) -> Question | None:
+    def question(self, key: str) -> Question | None:
         return next((q for q in self.questions if q.key == key), None)
-
-    def with_question(self, question: Question) -> GuildConfig:
-        """Return a copy with ``question`` appended, renumbering positions."""
-        questions = [*self.questions, question]
-        for index, existing in enumerate(questions):
-            questions[index] = replace(existing, position=index)
-        return replace(self, questions=questions)
-
-    def without_question(self, key: str) -> GuildConfig:
-        questions = [q for q in self.questions if q.key != key]
-        for index, existing in enumerate(questions):
-            questions[index] = replace(existing, position=index)
-        return replace(self, questions=questions)
 
 
 @dataclass(slots=True)
 class PendingIntake:
-    """A ticket channel that is locked and waiting on its opener to submit."""
+    """A ticket channel locked while waiting on its opener to submit."""
 
     guild_id: int
     channel_id: int
     user_id: int
     original_send_messages: bool | None = None
-    """The opener's ``send_messages`` overwrite before we locked them, so it can
-    be restored exactly. ``None`` means "inherit from category/role"."""
-
-    page: int = 0
-    partial_answers: dict[str, str] = field(default_factory=dict)
-    """Answers banked from earlier modal pages. Unused until chaining ships."""
+    """The opener's ``send_messages`` overwrite before we locked them, so it can be
+    restored exactly. ``None`` (inherit) differs meaningfully from ``False``."""
 
     prompt_message_id: int | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))

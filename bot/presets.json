@@ -1,0 +1,170 @@
+{
+  "minimal": {
+    "name": "Minimal",
+    "intake_title": "Quick question",
+    "intake_description": "Tell us what you need and we'll take it from here.",
+    "prompt_template": "A user opened a support ticket.\n\n{answers}",
+    "questions": [
+      {
+        "key": "request",
+        "label": "What do you need help with?",
+        "style": "paragraph",
+        "placeholder": "Describe it in your own words"
+      }
+    ]
+  },
+
+  "support": {
+    "name": "General support",
+    "intake_title": "Before we begin",
+    "intake_description": "Answer a few quick questions so we can help you faster. You'll be able to talk in this channel once you submit.",
+    "prompt_template": "A user opened a support ticket.\n\n{answers}\n\nRespond helpfully and ask for anything still missing.",
+    "questions": [
+      {
+        "key": "issue_type",
+        "label": "What kind of issue is this?",
+        "style": "choice",
+        "choices": ["Account", "Billing", "Technical", "Report a user", "Other"],
+        "placeholder": "Select all that apply"
+      },
+      {
+        "key": "summary",
+        "label": "Sum it up in one line",
+        "style": "short",
+        "placeholder": "e.g. Can't log in after changing my email"
+      },
+      {
+        "key": "details",
+        "label": "What happened?",
+        "style": "paragraph",
+        "placeholder": "Include anything you've already tried"
+      },
+      {
+        "key": "urgency",
+        "label": "How urgent is this?",
+        "style": "choice",
+        "choices": ["Blocking me right now", "Important but not blocking", "Just a question"],
+        "required": false
+      }
+    ]
+  },
+
+  "scam": {
+    "name": "Scam / fraud report",
+    "intake_title": "Report a scam",
+    "intake_description": "Share what happened so staff can investigate. Never send passwords or payment details here.",
+    "prompt_template": "A user is reporting a scam.\n\nScam type: {scam_type}\nReported user: {offender}\n\n{answers}\n\nTreat this as sensitive. Summarise the report and flag whether it needs urgent staff escalation.",
+    "questions": [
+      {
+        "key": "scam_type",
+        "label": "What kind of scam was it?",
+        "style": "choice",
+        "choices": [
+          "Impersonation",
+          "Fake giveaway",
+          "Phishing link",
+          "Payment / crypto scam",
+          "Account theft",
+          "Other"
+        ],
+        "placeholder": "Select all that apply"
+      },
+      {
+        "key": "offender",
+        "label": "Who did it? (username or ID)",
+        "style": "short",
+        "placeholder": "e.g. scammer#0001 or 123456789012345678"
+      },
+      {
+        "key": "what_happened",
+        "label": "What happened?",
+        "style": "paragraph",
+        "placeholder": "Walk through it step by step"
+      },
+      {
+        "key": "evidence",
+        "label": "Any evidence?",
+        "style": "paragraph",
+        "placeholder": "Message links, screenshots, transaction IDs",
+        "required": false
+      },
+      {
+        "key": "loss",
+        "label": "Did you lose anything?",
+        "style": "choice",
+        "choices": ["No", "Money", "Account access", "Items / in-game goods", "Not sure yet"],
+        "required": false
+      }
+    ]
+  },
+
+  "billing": {
+    "name": "Billing issue",
+    "intake_title": "Billing help",
+    "intake_description": "A few details up front means we can look up your account before replying.",
+    "prompt_template": "Billing ticket.\n\nProblem: {problem}\nInvoice: {invoice_id}\n\n{answers}\n\nDo not promise a refund; gather facts and hand off to a human for anything involving money movement.",
+    "questions": [
+      {
+        "key": "problem",
+        "label": "What's the problem?",
+        "style": "choice",
+        "choices": [
+          "Charged twice",
+          "Refund request",
+          "Wrong amount",
+          "Subscription won't cancel",
+          "Payment failed",
+          "Other"
+        ],
+        "placeholder": "Select all that apply"
+      },
+      {
+        "key": "invoice_id",
+        "label": "Invoice or transaction ID",
+        "style": "short",
+        "placeholder": "Leave blank if you can't find it",
+        "required": false
+      },
+      {
+        "key": "details",
+        "label": "Tell us more",
+        "style": "paragraph",
+        "placeholder": "Dates and amounts help a lot"
+      }
+    ]
+  },
+
+  "bug": {
+    "name": "Bug report",
+    "intake_title": "Report a bug",
+    "intake_description": "The more precise the steps, the faster this gets fixed.",
+    "prompt_template": "Bug report ({severity}).\n\n{answers}\n\nRestate the repro steps as a numbered list and identify the most likely component at fault.",
+    "questions": [
+      {
+        "key": "severity",
+        "label": "How bad is it?",
+        "style": "choice",
+        "choices": ["Blocking", "Major", "Minor", "Cosmetic"],
+        "placeholder": "Pick the closest match"
+      },
+      {
+        "key": "what_broke",
+        "label": "What broke?",
+        "style": "short",
+        "placeholder": "e.g. Export button does nothing on mobile"
+      },
+      {
+        "key": "steps",
+        "label": "Steps to reproduce",
+        "style": "paragraph",
+        "placeholder": "1. Go to...\n2. Click...\n3. See error"
+      },
+      {
+        "key": "expected",
+        "label": "What did you expect instead?",
+        "style": "short",
+        "required": false
+      }
+    ]
+  }
+}

@@ -37,12 +37,37 @@ User clicks Ticket Tool's "Create ticket"
 3. Create `.env`:
    ```
    DISCORD_BOT_TOKEN=...
-   DEV_GUILD_ID=...   # optional: instant slash-command sync while developing
+
+   # optional, development only
+   DEV_GUILD_ID=...             # instant slash-command sync (vs. up to an hour)
+   DEV_PRESET=support           # auto-apply this preset on every boot
+   DEV_TICKET_CATEGORY_ID=...   # auto-watch this category on every boot
    ```
+   Setting all three means a restart comes back fully configured — worth doing
+   while storage is still in-memory, since config is otherwise wiped each time.
 4. Run it:
    ```
    python -m bot
    ```
+
+## Presets
+
+`/intake preset` swaps in a ready-made question set from
+[`bot/presets.json`](bot/presets.json), so you don't have to run
+`/intake add-question` five times to try something:
+
+| Preset | Questions | Covers |
+| --- | --- | --- |
+| `minimal` | 1 | Fastest smoke test |
+| `support` | 4 | General triage — type, summary, details, urgency |
+| `scam` | 5 | Scam/fraud report — type, offender, evidence, loss |
+| `billing` | 3 | Billing — problem, invoice ID, details |
+| `bug` | 4 | Bug report — severity, repro steps, expected |
+
+Applying a preset replaces the questions, panel copy and prompt template, but
+**keeps** your watched categories, so switching presets mid-testing is safe.
+Edit `presets.json` to add your own — it's validated at startup, so a malformed
+preset fails immediately rather than when a user clicks the button.
 
 ## Configuring a server
 
@@ -105,6 +130,7 @@ A user opened a support ticket.
 ```
 bot/
   main.py            entrypoint, intents, cog + persistent view registration
+  ui.py              persistent button + dynamically built intake modal
   cogs/tickets.py    channel detection, gating, modal submission
   cogs/admin.py      /intake slash commands
   services/intake.py lock/unlock, opener resolution  ← Discord-aware core
@@ -113,8 +139,6 @@ bot/
   storage/base.py    Repository interface
   storage/memory.py  in-memory impl (dev)
   storage/schema.sql Postgres DDL
-  ui/views.py        persistent button
-  ui/modals.py       dynamically built intake modal
 ```
 
 Business rules live in `services/` and `storage/models.py`, never in the cogs, so
@@ -129,7 +153,9 @@ the planned web dashboard can drive the same objects through the same
   swap needed (`main.py`).
 - **Agent handoff is a TODO.** `cogs/tickets.py` logs the rendered prompt where
   the agent call belongs.
-- **Five questions max.** Discord's cap. `Question.page` and the `page` columns
-  exist so chained modals can be added without a migration.
+- **Five questions max.** Discord's cap on modal components. Supporting more
+  means chaining a second modal after the first submits.
+- **No question reordering.** Modal order is `GuildConfig.questions` order, so
+  changing it means remove + re-add.
 - **Abandoned intakes are never reaped.** A user who opens a ticket and never
   clicks the button stays locked until staff run `/intake unlock`.
